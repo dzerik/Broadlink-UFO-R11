@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+env
+.eggs
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+.ruff_cache
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Tests
+tests/
+.pytest_cache/
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Frontend (built separately)
+frontend/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.docker
+
+# Claude/Serena
+.claude/
+.serena/
+
+# Misc
+*.log
+*.tmp
+.DS_Store
+!/.mcp.json
+!/.claude/
+!/.serena/
+!/1740.json
+
+!/1740converted.json
+!/.idea/

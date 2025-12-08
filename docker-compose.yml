@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: btu-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - BTU_DEBUG=false
+      - BTU_HOST=0.0.0.0
+      - BTU_PORT=8000
+      - BTU_CORS_ORIGINS=["http://localhost:3000","http://frontend:3000","http://127.0.0.1:3000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - btu-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - BACKEND_URL=http://backend:8000
+    container_name: btu-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - btu-network
+
+networks:
+  btu-network:
+    driver: bridge

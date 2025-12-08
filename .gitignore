@@ -1,0 +1,42 @@
+# IDE
+.idea
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Test output
+test_output.json
+.coverage
+.pytest_cache/
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+.next/
+out/
+
+# Temp files
+*.1.json
+.mcp.json
+1740.json
+
+1740converted.json
+.claude
+.serena
+
