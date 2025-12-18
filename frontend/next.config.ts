@@ -1,12 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Enable standalone output for Docker
-  output: "standalone",
+  // Enable standalone output for Docker (not used by Vercel)
+  output: process.env.DOCKER_BUILD ? "standalone" : undefined,
 
   async rewrites() {
-    // In Docker, use backend service name; otherwise localhost
-    // This is evaluated at BUILD time, so we need ARG in Dockerfile
+    // For local development and Docker
+    // Vercel uses vercel.json rewrites instead
+    if (process.env.VERCEL) {
+      return [];
+    }
+
     const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
     return [
       {

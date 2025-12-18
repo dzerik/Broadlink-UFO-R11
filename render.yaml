@@ -1,0 +1,19 @@
+# Render Blueprint для FastAPI бэкенда
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: btu-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install ".[web]"
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: BTU_DEBUG
+        value: "false"
+      - key: BTU_CORS_ORIGINS
+        # Замените на ваш Vercel домен после деплоя
+        value: '["https://your-app.vercel.app","https://*.vercel.app"]'
+      - key: PYTHON_VERSION
+        value: "3.12.0"

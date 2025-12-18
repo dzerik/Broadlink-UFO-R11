@@ -21,6 +21,7 @@ COPY . .
 # Set build-time environment variables
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV DOCKER_BUILD=1
 
 # Backend URL for rewrites (build-time)
 ARG BACKEND_URL=http://backend:8000
