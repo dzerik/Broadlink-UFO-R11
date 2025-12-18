@@ -1,16 +1,21 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+@theme {
+  --color-background: #0a0a0a;
+  --color-foreground: #ededed;
 }
 
-@media (prefers-color-scheme: light) {
+@layer base {
   :root {
-    --background: #ffffff;
-    --foreground: #171717;
+    --background: var(--color-background);
+    --foreground: var(--color-foreground);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --background: #ffffff;
+      --foreground: #171717;
+    }
   }
 }
 
