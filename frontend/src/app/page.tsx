@@ -148,14 +148,6 @@ export default function Home() {
             >
               GitHub
             </a>
-            {" · "}
-            <a
-              href="/api/docs"
-              className="text-blue-400 hover:underline"
-              target="_blank"
-            >
-              API Docs
-            </a>
           </p>
         </div>
       </main>

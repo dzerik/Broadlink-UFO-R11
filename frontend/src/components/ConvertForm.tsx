@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { convertSingle, ApiError } from "@/lib/api";
+import { IRConverter, BTUError } from "@/lib/converter";
 import { useTranslation } from "@/i18n";
 import ConversionOptions, {
   defaultSettings,
   type ConversionSettings,
 } from "./ConversionOptions";
-import type { ConvertResponse } from "@/types";
+import type { ConvertResult } from "@/types";
 
 interface ConvertFormProps {
-  onResult?: (result: ConvertResponse) => void;
+  onResult?: (result: ConvertResult) => void;
 }
 
 export default function ConvertForm({ onResult }: ConvertFormProps) {
@@ -19,7 +19,7 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
   const [settings, setSettings] = useState<ConversionSettings>(defaultSettings);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ConvertResponse | null>(null);
+  const [result, setResult] = useState<ConvertResult | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,15 +30,21 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
     setResult(null);
 
     try {
-      const response = await convertSingle({
-        command: command.trim(),
-        compression_level: settings.compressionLevel,
-      });
+      const converter = new IRConverter(settings.compressionLevel);
+      const irCode = converter.convert(command.trim());
+      const mqttPayload = JSON.stringify({ ir_code_to_send: irCode });
+
+      const response: ConvertResult = {
+        ir_code: irCode,
+        mqtt_payload: mqttPayload,
+        original_length: command.trim().length,
+        result_length: irCode.length,
+      };
       setResult(response);
       onResult?.(response);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.detail);
+      if (err instanceof BTUError) {
+        setError(err.message);
       } else {
         setError(t.validation.unknownError);
       }
@@ -51,7 +57,6 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
     navigator.clipboard.writeText(text);
   };
 
-  // Format MQTT payload if needed
   const formatMqttPayload = (payload: string): string => {
     if (!settings.formatOutput) return payload;
     try {

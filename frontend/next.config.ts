@@ -1,24 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Enable standalone output for Docker (not used by Vercel)
-  output: process.env.DOCKER_BUILD ? "standalone" : undefined,
-
-  async rewrites() {
-    // For local development and Docker
-    // Vercel uses vercel.json rewrites instead
-    if (process.env.VERCEL) {
-      return [];
-    }
-
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendUrl}/api/:path*`,
-      },
-    ];
-  },
+  output: "export",
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || "",
+  assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || "",
+  images: { unoptimized: true },
 };
 
 export default nextConfig;

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useTranslation } from "@/i18n";
+import { IRConverter, BTUError } from "@/lib/converter";
 import JsonEditor from "./JsonEditor";
 import ConversionOptions, {
   defaultSettings,
@@ -9,14 +10,7 @@ import ConversionOptions, {
 } from "./ConversionOptions";
 import type { SmartIRData } from "@/types";
 
-interface TwoPanelEditorProps {
-  onConvert?: (
-    input: SmartIRData,
-    settings: ConversionSettings
-  ) => Promise<SmartIRData>;
-}
-
-export default function TwoPanelEditor({ onConvert }: TwoPanelEditorProps) {
+export default function TwoPanelEditor() {
   const { t } = useTranslation();
   const [inputJson, setInputJson] = useState("");
   const [outputJson, setOutputJson] = useState("");
@@ -61,6 +55,18 @@ export default function TwoPanelEditor({ onConvert }: TwoPanelEditorProps) {
     [validateJson]
   );
 
+  const countCommands = (obj: Record<string, unknown>): number => {
+    let count = 0;
+    for (const value of Object.values(obj)) {
+      if (typeof value === "string") {
+        count++;
+      } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        count += countCommands(value as Record<string, unknown>);
+      }
+    }
+    return count;
+  };
+
   const handleConvert = async () => {
     const parsed = validateJson(inputJson);
     if (!parsed) return;
@@ -70,26 +76,11 @@ export default function TwoPanelEditor({ onConvert }: TwoPanelEditorProps) {
     setStats(null);
 
     try {
-      const response = await fetch("/api/convert/file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: parsed,
-          compression_level: settings.compressionLevel,
-          wrap_with_ir_code: settings.wrapWithIrCode,
-        }),
-      });
+      const converter = new IRConverter(settings.compressionLevel);
+      const result = converter.processSmartIRData(parsed, settings.wrapWithIrCode);
 
-      if (!response.ok) {
-        const error = await response.json();
-        setInputError(error.detail || t.validation.conversionError);
-        return;
-      }
+      let outputContent = result as Record<string, unknown>;
 
-      const result = await response.json();
-      let outputContent = result.content;
-
-      // If wrap_with_ir_code is disabled, unwrap
       if (!settings.wrapWithIrCode) {
         outputContent = unwrapIrCodes(outputContent);
       }
@@ -98,15 +89,21 @@ export default function TwoPanelEditor({ onConvert }: TwoPanelEditorProps) {
         ? JSON.stringify(outputContent, null, 2)
         : JSON.stringify(outputContent);
       setOutputJson(formattedOutput);
+
+      const commandsCount = countCommands(parsed.commands ?? {});
       setStats({
-        commands: result.commands_processed,
+        commands: commandsCount,
         inputSize: inputJson.length,
         outputSize: formattedOutput.length,
       });
     } catch (e) {
-      setInputError(
-        `${t.errors.error}: ${e instanceof Error ? e.message : t.validation.unknownError}`
-      );
+      if (e instanceof BTUError) {
+        setInputError(e.message);
+      } else {
+        setInputError(
+          `${t.errors.error}: ${e instanceof Error ? e.message : t.validation.unknownError}`
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -307,13 +304,11 @@ export default function TwoPanelEditor({ onConvert }: TwoPanelEditorProps) {
   );
 }
 
-// Function to unwrap ir_code_to_send
 function unwrapIrCodes(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "string") {
-      // Try to parse JSON and extract ir_code_to_send
       try {
         const parsed = JSON.parse(value);
         if (parsed && typeof parsed.ir_code_to_send === "string") {

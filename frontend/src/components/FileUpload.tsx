@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { convertFile, ApiError } from "@/lib/api";
+import { IRConverter, BTUError } from "@/lib/converter";
 import { useTranslation } from "@/i18n";
 import ConversionOptions, {
   defaultSettings,
   type ConversionSettings,
 } from "./ConversionOptions";
-import type { FileConvertResponse, SmartIRData } from "@/types";
+import type { SmartIRData, FileConvertResult } from "@/types";
 
 export default function FileUpload() {
   const { t } = useTranslation();
@@ -15,7 +15,7 @@ export default function FileUpload() {
   const [settings, setSettings] = useState<ConversionSettings>(defaultSettings);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<FileConvertResponse | null>(null);
+  const [result, setResult] = useState<FileConvertResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,6 +45,18 @@ export default function FileUpload() {
     }
   };
 
+  const countCommands = (obj: Record<string, unknown>): number => {
+    let count = 0;
+    for (const value of Object.values(obj)) {
+      if (typeof value === "string") {
+        count++;
+      } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        count += countCommands(value as Record<string, unknown>);
+      }
+    }
+    return count;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return;
@@ -57,15 +69,17 @@ export default function FileUpload() {
       const text = await file.text();
       const content: SmartIRData = JSON.parse(text);
 
-      const response = await convertFile({
-        content,
-        compression_level: settings.compressionLevel,
-        wrap_with_ir_code: settings.wrapWithIrCode,
+      const converter = new IRConverter(settings.compressionLevel);
+      const converted = converter.processSmartIRData(content, settings.wrapWithIrCode);
+      const commandsProcessed = countCommands(content.commands ?? {});
+
+      setResult({
+        content: converted as Record<string, unknown>,
+        commands_processed: commandsProcessed,
       });
-      setResult(response);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.detail);
+      if (err instanceof BTUError) {
+        setError(err.message);
       } else if (err instanceof SyntaxError) {
         setError(t.fileUpload.invalidJson);
       } else {
