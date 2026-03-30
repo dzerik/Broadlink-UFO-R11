@@ -15,6 +15,14 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-4">
+          <a
+            href="https://github.com/smartHomeHub/SmartIR/tree/master/codes"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            SmartIR Codes
+          </a>
           <LanguageSwitcher />
         </div>
       </div>
