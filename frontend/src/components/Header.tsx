@@ -23,6 +23,14 @@ export default function Header() {
           >
             SmartIR Codes
           </a>
+          <a
+            href="https://github.com/dzerik/Broadlink-UFO-R11"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            GitHub
+          </a>
           <LanguageSwitcher />
         </div>
       </div>
