@@ -29,10 +29,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [mounted, setMounted] = useState(false);
 
-  // Load saved language on mount
+  // Load saved language on mount. localStorage недоступен при SSR/static export,
+  // поэтому чтение выполняется после монтирования — это синхронизация с внешним
+  // источником, для которой синхронный setState здесь оправдан.
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY) as Language | null;
     if (saved && (saved === "en" || saved === "ru")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLanguageState(saved);
     }
     setMounted(true);
