@@ -29,6 +29,11 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
     setError(null);
     setResult(null);
 
+    // Уступаем event-loop, чтобы React успел закоммитить loading=true до
+    // синхронной работы конвертера — иначе setLoading(true)/setLoading(false)
+    // батчатся в один рендер и спиннер никогда не показывается.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
     try {
       const converter = new IRConverter(settings.compressionLevel);
       const irCode = converter.convert(command.trim());
@@ -72,7 +77,6 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
         settings={settings}
         onChange={setSettings}
         disabled={loading}
-        compact
         showWrapOption={false}
         showFormatOption
       />

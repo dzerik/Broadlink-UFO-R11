@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { en, ru, type TranslationKeys } from "./translations";
@@ -22,44 +23,45 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-const STORAGE_KEY = "btu-language";
+export const STORAGE_KEY = "btu-language";
 const DEFAULT_LANGUAGE: Language = "en";
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
-  const [mounted, setMounted] = useState(false);
+function readSavedLanguage(): Language {
+  if (typeof window === "undefined") return DEFAULT_LANGUAGE;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "en" || saved === "ru") return saved;
+  } catch {
+    // localStorage may be blocked (Safari private mode etc.) — fall through.
+  }
+  return DEFAULT_LANGUAGE;
+}
 
-  // Load saved language on mount. localStorage недоступен при SSR/static export,
-  // поэтому чтение выполняется после монтирования — это синхронизация с внешним
-  // источником, для которой синхронный setState здесь оправдан.
+export function LanguageProvider({ children }: { children: ReactNode }) {
+  // Ленивый инициализатор: читаем localStorage в первом же render'e.
+  // Static HTML отрисован с DEFAULT_LANGUAGE — SSR-mismatch подавляется
+  // suppressHydrationWarning на <html> в layout.tsx.
+  const [language, setLanguageState] = useState<Language>(readSavedLanguage);
+
+  // Синхронизируем <html lang> при смене языка (initial значение уже
+  // выставлено inline-скриптом в layout, здесь только при switch).
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as Language | null;
-    if (saved && (saved === "en" || saved === "ru")) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLanguageState(saved);
-    }
-    setMounted(true);
-  }, []);
+    document.documentElement.lang = language;
+  }, [language]);
 
   const setLanguage = useCallback((lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem(STORAGE_KEY, lang);
-    // Update html lang attribute
-    document.documentElement.lang = lang;
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch {
+      // ignore write errors
+    }
   }, []);
 
-  // Update html lang on mount
-  useEffect(() => {
-    if (mounted) {
-      document.documentElement.lang = language;
-    }
-  }, [language, mounted]);
-
-  const value: LanguageContextType = {
-    language,
-    setLanguage,
-    t: translations[language],
-  };
+  const value = useMemo<LanguageContextType>(
+    () => ({ language, setLanguage, t: translations[language] }),
+    [language, setLanguage]
+  );
 
   return (
     <LanguageContext.Provider value={value}>

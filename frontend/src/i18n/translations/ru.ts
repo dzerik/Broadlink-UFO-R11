@@ -26,16 +26,12 @@ export const ru: TranslationKeys = {
   // Conversion options
   options: {
     compression: "Сжатие:",
-    compressionLabel: "Уровень сжатия",
     level0: "0 - Без сжатия",
     level1: "1 - Быстрое",
     level2: "2 - Оптимальное",
-    level2Recommended: "2 - Оптимальное (рекомендуется)",
     level3: "3 - Максимальное",
     wrapWithIrCode: "Обернуть в",
-    wrapDescription: "Добавляет JSON обёртку для MQTT",
     formatJson: "Форматировать JSON",
-    formatDescription: "Красивый вывод с отступами",
   },
 
   // Convert form (single code)
@@ -60,6 +56,7 @@ export const ru: TranslationKeys = {
     onlyJson: "Только .json файлы",
     selectJsonFile: "Пожалуйста, выберите JSON файл",
     invalidJson: "Невалидный JSON файл",
+    fileTooLarge: "Файл слишком большой (макс. 50 МБ)",
     convertFile: "Конвертировать файл",
     conversionComplete: "Конвертация завершена",
     commandsProcessed: "Обработано команд:",

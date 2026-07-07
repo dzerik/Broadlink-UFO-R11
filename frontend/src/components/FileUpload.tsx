@@ -1,13 +1,20 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { IRConverter, BTUError } from "@/lib/converter";
+import {
+  IRConverter,
+  BTUError,
+  isSmartIRData,
+  countSmartIRCommands,
+  MAX_FILE_SIZE,
+} from "@/lib/converter";
+import { downloadTextFile } from "@/lib/download";
 import { useTranslation } from "@/i18n";
 import ConversionOptions, {
   defaultSettings,
   type ConversionSettings,
 } from "./ConversionOptions";
-import type { SmartIRData, FileConvertResult } from "@/types";
+import type { FileConvertResult } from "@/types";
 
 export default function FileUpload() {
   const { t } = useTranslation();
@@ -18,43 +25,31 @@ export default function FileUpload() {
   const [result, setResult] = useState<FileConvertResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const acceptFile = (candidate: File): void => {
+    if (!candidate.name.endsWith(".json")) {
+      setError(t.fileUpload.selectJsonFile);
+      return;
+    }
+    if (candidate.size > MAX_FILE_SIZE) {
+      setError(t.fileUpload.fileTooLarge);
+      return;
+    }
+    setFile(candidate);
+    setError(null);
+    setResult(null);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      if (!selectedFile.name.endsWith(".json")) {
-        setError(t.fileUpload.selectJsonFile);
-        return;
-      }
-      setFile(selectedFile);
-      setError(null);
-      setResult(null);
-    }
+    // Сброс value: без него повторный выбор ТОГО ЖЕ файла не даёт change event.
+    e.target.value = "";
+    if (selectedFile) acceptFile(selectedFile);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      if (!droppedFile.name.endsWith(".json")) {
-        setError(t.fileUpload.selectJsonFile);
-        return;
-      }
-      setFile(droppedFile);
-      setError(null);
-      setResult(null);
-    }
-  };
-
-  const countCommands = (obj: Record<string, unknown>): number => {
-    let count = 0;
-    for (const value of Object.values(obj)) {
-      if (typeof value === "string") {
-        count++;
-      } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-        count += countCommands(value as Record<string, unknown>);
-      }
-    }
-    return count;
+    if (droppedFile) acceptFile(droppedFile);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -65,13 +60,21 @@ export default function FileUpload() {
     setError(null);
     setResult(null);
 
+    // Уступаем event-loop: React должен закоммитить loading=true до
+    // синхронной работы конвертера.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
     try {
       const text = await file.text();
-      const content: SmartIRData = JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
+      if (!isSmartIRData(parsed)) {
+        setError(t.validation.mustBeObject);
+        return;
+      }
 
       const converter = new IRConverter(settings.compressionLevel);
-      const converted = converter.processSmartIRData(content, settings.wrapWithIrCode);
-      const commandsProcessed = countCommands(content.commands ?? {});
+      const converted = converter.processSmartIRData(parsed, settings.wrapWithIrCode);
+      const commandsProcessed = countSmartIRCommands(parsed.commands);
 
       setResult({
         content: converted as Record<string, unknown>,
@@ -97,19 +100,10 @@ export default function FileUpload() {
       ? JSON.stringify(result.content, null, 2)
       : JSON.stringify(result.content);
 
-    const blob = new Blob([jsonContent], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file
-      ? file.name.replace(".json", "_converted.json")
+    const filename = file
+      ? file.name.replace(/\.json$/, "_converted.json")
       : "converted.json";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadTextFile(jsonContent, filename);
   };
 
   const getPreviewContent = (): string => {
@@ -127,7 +121,6 @@ export default function FileUpload() {
           settings={settings}
           onChange={setSettings}
           disabled={loading}
-          compact
           showWrapOption
           showFormatOption
         />

@@ -7,9 +7,8 @@ export class BroadlinkDecoder {
 
   decode(command: string): number[] {
     const bytes = this.validateAndDecodeBase64(command);
-    const hex = this.bytesToHex(bytes);
-    this.validateHexData(hex);
-    return this.parseTimings(hex);
+    this.validateHeader(bytes);
+    return this.parseTimings(bytes);
   }
 
   private validateAndDecodeBase64(value: string): Uint8Array {
@@ -23,47 +22,34 @@ export class BroadlinkDecoder {
     }
   }
 
-  private bytesToHex(bytes: Uint8Array): string {
-    let hex = '';
-    for (let i = 0; i < bytes.length; i++) {
-      hex += bytes[i].toString(16).padStart(2, '0');
-    }
-    return hex;
-  }
-
-  private validateHexData(hex: string): void {
-    if (hex.length < 8) {
-      throw new IRCodeError(`Broadlink data too short: ${hex.length} chars`);
-    }
-    if (isNaN(parseInt(hex.substring(0, 8), 16))) {
-      throw new IRCodeError('Invalid hex format in Broadlink header');
+  private validateHeader(bytes: Uint8Array): void {
+    // Заголовок Broadlink: [type, repeat, len_lo, len_hi], минимум 4 байта.
+    if (bytes.length < 4) {
+      throw new IRCodeError(`Broadlink data too short: ${bytes.length} bytes`);
     }
   }
 
-  private parseTimings(hex: string): number[] {
+  private parseTimings(bytes: Uint8Array): number[] {
     const dec: number[] = [];
+    // Длина данных в байтах — uint16 little-endian на позициях [2..4].
+    const length = bytes[2] | (bytes[3] << 8);
+    const end = Math.min(4 + length, bytes.length);
 
-    const length = parseInt(hex.substring(6, 8) + hex.substring(4, 6), 16);
-
-    let i = 8;
-    while (i < length * 2 + 8) {
-      if (i + 2 > hex.length) break;
-
-      let hexValue = hex.substring(i, i + 2);
-      if (hexValue === '00') {
-        if (i + 6 > hex.length) {
+    let i = 4;
+    while (i < end) {
+      let value: number;
+      if (bytes[i] === 0) {
+        // Extended-маркер: 0x00, затем uint16 big-endian.
+        if (i + 3 > bytes.length) {
           throw new IRCodeError('Incomplete data reading extended value');
         }
-        hexValue = hex.substring(i + 2, i + 4) + hex.substring(i + 4, i + 6);
-        i += 4;
+        value = (bytes[i + 1] << 8) | bytes[i + 2];
+        i += 3;
+      } else {
+        value = bytes[i];
+        i += 1;
       }
-
-      const parsed = parseInt(hexValue, 16);
-      if (isNaN(parsed)) {
-        throw new IRCodeError(`Invalid hex value: ${hexValue}`);
-      }
-      dec.push(Math.ceil(parsed / this.unit));
-      i += 2;
+      dec.push(Math.ceil(value / this.unit));
     }
 
     return dec;

@@ -3,8 +3,9 @@ import { BroadlinkDecoder } from './broadlink-decoder';
 import { TuyaEncoder } from './tuya-encoder';
 import { processSmartIRData, type SmartIRData } from './smartir';
 
-export { CompressionLevel } from './constants';
-export { BTUError, IRCodeError, CompressionError, JSONValidationError } from './errors';
+export { CompressionLevel, MAX_FILE_SIZE } from './constants';
+export { BTUError, IRCodeError, CompressionError } from './errors';
+export { isSmartIRData, countSmartIRCommands } from './smartir';
 export type { SmartIRData } from './smartir';
 
 export class IRConverter {
@@ -20,11 +21,6 @@ export class IRConverter {
   convert(broadlinkCode: string): string {
     const timings = this.decoder.decode(broadlinkCode);
     return this.encoder.encode(timings);
-  }
-
-  convertToMqttPayload(broadlinkCode: string): string {
-    const irCode = this.convert(broadlinkCode);
-    return JSON.stringify({ ir_code_to_send: irCode });
   }
 
   processSmartIRData(

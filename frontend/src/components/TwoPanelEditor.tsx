@@ -2,13 +2,23 @@
 
 import { useState, useCallback } from "react";
 import { useTranslation } from "@/i18n";
-import { IRConverter, BTUError } from "@/lib/converter";
+import {
+  IRConverter,
+  BTUError,
+  isSmartIRData,
+  countSmartIRCommands,
+} from "@/lib/converter";
+import { downloadTextFile } from "@/lib/download";
 import JsonEditor from "./JsonEditor";
 import ConversionOptions, {
   defaultSettings,
   type ConversionSettings,
 } from "./ConversionOptions";
 import type { SmartIRData } from "@/types";
+
+// Выше этого порога live-валидация (JSON.parse на каждый keystroke)
+// ощутимо тормозит ввод — валидируем только по нажатию "Convert".
+const LIVE_VALIDATION_MAX_CHARS = 500_000;
 
 export default function TwoPanelEditor() {
   const { t } = useTranslation();
@@ -30,13 +40,13 @@ export default function TwoPanelEditor() {
         return null;
       }
       try {
-        const parsed = JSON.parse(json);
-        if (typeof parsed !== "object" || parsed === null) {
+        const parsed: unknown = JSON.parse(json);
+        if (!isSmartIRData(parsed)) {
           setInputError(t.validation.mustBeObject);
           return null;
         }
         setInputError(null);
-        return parsed as SmartIRData;
+        return parsed;
       } catch (e) {
         setInputError(
           `${t.validation.invalidJson} ${e instanceof Error ? e.message : t.validation.parseError}`
@@ -50,22 +60,16 @@ export default function TwoPanelEditor() {
   const handleInputChange = useCallback(
     (value: string) => {
       setInputJson(value);
-      validateJson(value);
+      // Пропускаем синхронную валидацию для очень больших вставок — иначе
+      // JSON.parse блокирует UI на каждое нажатие клавиши.
+      if (value.length <= LIVE_VALIDATION_MAX_CHARS) {
+        validateJson(value);
+      } else {
+        setInputError(null);
+      }
     },
     [validateJson]
   );
-
-  const countCommands = (obj: Record<string, unknown>): number => {
-    let count = 0;
-    for (const value of Object.values(obj)) {
-      if (typeof value === "string") {
-        count++;
-      } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-        count += countCommands(value as Record<string, unknown>);
-      }
-    }
-    return count;
-  };
 
   const handleConvert = async () => {
     const parsed = validateJson(inputJson);
@@ -74,6 +78,10 @@ export default function TwoPanelEditor() {
     setLoading(true);
     setOutputJson("");
     setStats(null);
+
+    // Уступаем event-loop, чтобы React закоммитил loading=true до синхронной
+    // работы конвертера (иначе setLoading true→false батчатся в один рендер).
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     try {
       const converter = new IRConverter(settings.compressionLevel);
@@ -90,7 +98,7 @@ export default function TwoPanelEditor() {
         : JSON.stringify(outputContent);
       setOutputJson(formattedOutput);
 
-      const commandsCount = countCommands(parsed.commands ?? {});
+      const commandsCount = countSmartIRCommands(parsed.commands);
       setStats({
         commands: commandsCount,
         inputSize: inputJson.length,
@@ -131,15 +139,7 @@ export default function TwoPanelEditor() {
 
   const handleDownload = () => {
     if (!outputJson) return;
-    const blob = new Blob([outputJson], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "converted.json";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadTextFile(outputJson, "converted.json");
   };
 
   return (
@@ -150,7 +150,6 @@ export default function TwoPanelEditor() {
           settings={settings}
           onChange={setSettings}
           disabled={loading}
-          compact
           showWrapOption
           showFormatOption
         />
@@ -305,21 +304,32 @@ export default function TwoPanelEditor() {
 }
 
 function unwrapIrCodes(obj: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+  // Object.create(null): защита от prototype pollution через user-controlled key.
+  const result: Record<string, unknown> = Object.create(null);
 
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "string") {
       try {
-        const parsed = JSON.parse(value);
-        if (parsed && typeof parsed.ir_code_to_send === "string") {
-          result[key] = parsed.ir_code_to_send;
+        const parsed: unknown = JSON.parse(value);
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          !Array.isArray(parsed) &&
+          typeof (parsed as { ir_code_to_send?: unknown }).ir_code_to_send ===
+            "string"
+        ) {
+          result[key] = (parsed as { ir_code_to_send: string }).ir_code_to_send;
         } else {
           result[key] = value;
         }
       } catch {
         result[key] = value;
       }
-    } else if (typeof value === "object" && value !== null) {
+    } else if (
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
       result[key] = unwrapIrCodes(value as Record<string, unknown>);
     } else {
       result[key] = value;

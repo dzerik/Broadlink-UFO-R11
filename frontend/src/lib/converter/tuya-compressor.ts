@@ -173,20 +173,6 @@ export class TuyaCompressor {
 
     const findIdx = (n: number): number => bisectSuffix(suffixes, n, data);
 
-    const updateSuffixes = (currentPos: number): number => {
-      while (nextPos <= currentPos) {
-        if (suffixes.length === W) {
-          suffixes.splice(findIdx(nextPos - W), 1);
-        }
-        const idx = findIdx(nextPos);
-        suffixes.splice(idx, 1, ...[]); // placeholder
-        suffixes.splice(idx, 0, nextPos);
-        nextPos++;
-      }
-      // Return the index where currentPos was just inserted
-      return findIdx(currentPos) - 1; // idx of currentPos in suffixes
-    };
-
     while (pos < data.length) {
       let bestLength = 0;
       let bestDistance = 0;
@@ -204,18 +190,20 @@ export class TuyaCompressor {
         }
       } else {
         // BALANCED: suffix array, check two nearest neighbors
-        // Update suffix array up to current position
+        // Update suffix array up to current position; capture the index
+        // where `pos` itself was inserted — это позволяет обойтись без
+        // O(W) suffixes.indexOf(pos) на каждой позиции внешнего цикла.
+        let posIdx = -1;
         while (nextPos <= pos) {
           if (suffixes.length === W) {
             suffixes.splice(findIdx(nextPos - W), 1);
           }
           const idx = findIdx(nextPos);
           suffixes.splice(idx, 0, nextPos);
+          if (nextPos === pos) posIdx = idx;
           nextPos++;
         }
 
-        // Find the index of `pos` in suffixes
-        const posIdx = suffixes.indexOf(pos);
         // Check neighbors at posIdx+1 and posIdx-1
         const neighbors = [posIdx + 1, posIdx - 1];
         for (const ni of neighbors) {
@@ -270,18 +258,20 @@ export class TuyaCompressor {
     for (let pos = 0; pos < data.length; pos++) {
       if (predecessors[pos] === null) continue;
 
-      // Update suffix array
+      // Update suffix array; capture position of `pos` after insertion
+      // (избегаем O(W) suffixes.indexOf(pos) — см. compressGreedy).
+      let posIdx = -1;
       while (nextPos <= pos) {
         if (suffixes.length === W) {
           suffixes.splice(findIdx(nextPos - W), 1);
         }
         const idx = findIdx(nextPos);
         suffixes.splice(idx, 0, nextPos);
+        if (nextPos === pos) posIdx = idx;
         nextPos++;
       }
 
       // Find best match via suffix array neighbors
-      const posIdx = suffixes.indexOf(pos);
       let bestLen = 0;
       let bestDist = 0;
       const neighbors = [posIdx + 1, posIdx - 1];

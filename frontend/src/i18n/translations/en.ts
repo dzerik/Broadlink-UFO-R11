@@ -16,16 +16,12 @@ export interface TranslationKeys {
   };
   options: {
     compression: string;
-    compressionLabel: string;
     level0: string;
     level1: string;
     level2: string;
-    level2Recommended: string;
     level3: string;
     wrapWithIrCode: string;
-    wrapDescription: string;
     formatJson: string;
-    formatDescription: string;
   };
   convertForm: {
     inputLabel: string;
@@ -46,6 +42,7 @@ export interface TranslationKeys {
     onlyJson: string;
     selectJsonFile: string;
     invalidJson: string;
+    fileTooLarge: string;
     convertFile: string;
     conversionComplete: string;
     commandsProcessed: string;
@@ -126,16 +123,12 @@ export const en: TranslationKeys = {
   // Conversion options
   options: {
     compression: "Compression:",
-    compressionLabel: "Compression level",
     level0: "0 - No compression",
     level1: "1 - Fast",
     level2: "2 - Optimal",
-    level2Recommended: "2 - Optimal (recommended)",
     level3: "3 - Maximum",
     wrapWithIrCode: "Wrap in",
-    wrapDescription: "Adds JSON wrapper for MQTT",
     formatJson: "Format JSON",
-    formatDescription: "Pretty output with indentation",
   },
 
   // Convert form (single code)
@@ -160,6 +153,7 @@ export const en: TranslationKeys = {
     onlyJson: "Only .json files",
     selectJsonFile: "Please select a JSON file",
     invalidJson: "Invalid JSON file",
+    fileTooLarge: "File too large (max 50 MB)",
     convertFile: "Convert file",
     conversionComplete: "Conversion complete",
     commandsProcessed: "Commands processed:",

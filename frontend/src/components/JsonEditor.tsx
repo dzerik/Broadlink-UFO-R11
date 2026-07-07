@@ -2,6 +2,10 @@
 
 import { useCallback, useMemo } from "react";
 
+// Порог, выше которого пропускаем подсветку — на очень больших значениях
+// проход по всем токенам блокирует main-thread.
+const HIGHLIGHT_MAX_CHARS = 200_000;
+
 interface JsonEditorProps {
   value: string;
   onChange?: (value: string) => void;
@@ -14,39 +18,91 @@ interface JsonEditorProps {
   maxLines?: number;
 }
 
-// Подсветка синтаксиса JSON
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * Одноходовой JSON-aware токенизатор для подсветки. В отличие от
+ * regex-каскада, корректно обрабатывает скобки внутри строковых литералов —
+ * `"[on]"` целиком помечается как строка, а `[` не окрашивается как скобка.
+ */
 function highlightJson(json: string): string {
   if (!json) return "";
+  const out: string[] = [];
+  const n = json.length;
+  let i = 0;
 
-  // Escape HTML
-  const escaped = json
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  while (i < n) {
+    const ch = json[i];
 
-  // Подсветка различных элементов JSON
-  return escaped
-    // Строки (ключи и значения)
-    .replace(
-      /("(?:[^"\\]|\\.)*")\s*:/g,
-      '<span class="text-purple-400">$1</span>:'
-    )
-    .replace(
-      /:\s*("(?:[^"\\]|\\.)*")/g,
-      ': <span class="text-green-400">$1</span>'
-    )
-    // Числа
-    .replace(
-      /:\s*(-?\d+\.?\d*)/g,
-      ': <span class="text-amber-400">$1</span>'
-    )
-    // Boolean и null
-    .replace(
-      /:\s*(true|false|null)/g,
-      ': <span class="text-blue-400">$1</span>'
-    )
-    // Скобки
-    .replace(/([{}\[\]])/g, '<span class="text-gray-500">$1</span>');
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < n) {
+        const c = json[j];
+        if (c === "\\") {
+          j += 2;
+          continue;
+        }
+        if (c === '"') {
+          j++;
+          break;
+        }
+        j++;
+      }
+      // Ключ vs значение — по следующему не-пробельному символу.
+      let k = j;
+      while (k < n && (json[k] === " " || json[k] === "\t")) k++;
+      const cls = json[k] === ":" ? "text-purple-400" : "text-green-400";
+      out.push(`<span class="${cls}">${escapeHtml(json.slice(i, j))}</span>`);
+      i = j;
+      continue;
+    }
+
+    if (ch === "{" || ch === "}" || ch === "[" || ch === "]") {
+      out.push(`<span class="text-gray-500">${ch}</span>`);
+      i++;
+      continue;
+    }
+
+    if (ch === "-" || (ch >= "0" && ch <= "9")) {
+      let j = i;
+      if (json[j] === "-") j++;
+      while (j < n && json[j] >= "0" && json[j] <= "9") j++;
+      if (json[j] === ".") {
+        j++;
+        while (j < n && json[j] >= "0" && json[j] <= "9") j++;
+      }
+      if (json[j] === "e" || json[j] === "E") {
+        j++;
+        if (json[j] === "+" || json[j] === "-") j++;
+        while (j < n && json[j] >= "0" && json[j] <= "9") j++;
+      }
+      out.push(`<span class="text-amber-400">${json.slice(i, j)}</span>`);
+      i = j;
+      continue;
+    }
+
+    if (json.startsWith("true", i)) {
+      out.push('<span class="text-blue-400">true</span>');
+      i += 4;
+      continue;
+    }
+    if (json.startsWith("null", i)) {
+      out.push('<span class="text-blue-400">null</span>');
+      i += 4;
+      continue;
+    }
+    if (json.startsWith("false", i)) {
+      out.push('<span class="text-blue-400">false</span>');
+      i += 5;
+      continue;
+    }
+
+    out.push(escapeHtml(ch));
+    i++;
+  }
+
+  return out.join("");
 }
 
 export default function JsonEditor({
@@ -66,17 +122,19 @@ export default function JsonEditor({
     [onChange]
   );
 
-  const highlightedHtml = useMemo(() => highlightJson(value), [value]);
+  const highlightedHtml = useMemo(
+    () => (value.length > HIGHLIGHT_MAX_CHARS ? "" : highlightJson(value)),
+    [value]
+  );
 
-  // Вычисляем количество строк и нужен ли скролл
   const lineCount = useMemo(() => value.split("\n").length, [value]);
   const needsScroll = lineCount > maxLines;
-
-  // Высота строки ~20px, максимальная высота = maxLines * 20px
   const maxHeight = `${maxLines * 20}px`;
+  const scrollStyle = needsScroll ? { maxHeight, overflowY: "auto" as const } : undefined;
 
-  // Для readOnly режима используем div с подсветкой
-  if (readOnly && value) {
+  // readOnly-режим: всегда рендерим одну DOM-структуру (<pre>) — переход
+  // между пустым и непустым значением не вызывает unmount/remount.
+  if (readOnly) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
         {label && (
@@ -87,8 +145,13 @@ export default function JsonEditor({
         <div className="relative flex-1 min-h-0">
           <pre
             className="w-full h-full p-4 bg-gray-900 border border-gray-700 rounded-lg text-sm font-mono overflow-auto whitespace-pre-wrap break-all"
-            style={needsScroll ? { maxHeight, overflowY: "auto" } : undefined}
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+            style={scrollStyle}
+            dangerouslySetInnerHTML={{
+              __html:
+                value.length === 0
+                  ? `<span class="text-gray-600">${escapeHtml(placeholder)}</span>`
+                  : highlightedHtml || escapeHtml(value),
+            }}
           />
         </div>
       </div>
@@ -107,9 +170,8 @@ export default function JsonEditor({
           value={value}
           onChange={handleChange}
           placeholder={placeholder}
-          readOnly={readOnly}
           spellCheck={false}
-          style={needsScroll ? { maxHeight, overflowY: "auto" } : undefined}
+          style={scrollStyle}
           className={`w-full h-full p-4 bg-gray-900 border rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
             error
               ? "border-red-500 text-red-300"

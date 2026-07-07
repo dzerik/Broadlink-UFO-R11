@@ -18,10 +18,3 @@ export class CompressionError extends BTUError {
     this.name = 'CompressionError';
   }
 }
-
-export class JSONValidationError extends BTUError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'JSONValidationError';
-  }
-}
