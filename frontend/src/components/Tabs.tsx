@@ -15,19 +15,42 @@ export default function Tabs({ tabs }: TabsProps) {
 
   return (
     <div className="w-full">
-      <div className="flex border-b border-gray-700 mb-6">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium transition-colors duration-200 border-b-2 -mb-px ${
-              activeTab === tab.id
-                ? "text-blue-400 border-blue-400"
-                : "text-gray-400 border-transparent hover:text-gray-300"
-            }`}
-          >
-            {tab.label}
-          </button>
+      {/* Мода отображается инструментально: MODE › a · b · c */}
+      <div
+        className="flex items-center gap-3 pb-3 mb-6 border-b"
+        style={{ borderColor: "var(--color-rule)" }}
+      >
+        <span className="label">Mode</span>
+        <span
+          style={{ color: "var(--color-text-dim)" }}
+          aria-hidden="true"
+        >
+          ›
+        </span>
+        {tabs.map((tab, i) => (
+          <span key={tab.id} className="flex items-center gap-3">
+            {i > 0 && (
+              <span
+                style={{ color: "var(--color-text-dim)" }}
+                aria-hidden="true"
+              >
+                ·
+              </span>
+            )}
+            <button
+              onClick={() => setActiveTab(tab.id)}
+              aria-pressed={activeTab === tab.id}
+              className="label tracking-[0.15em] transition-colors"
+              style={{
+                color:
+                  activeTab === tab.id
+                    ? "var(--color-amber)"
+                    : "var(--color-text-mute)",
+              }}
+            >
+              {tab.label}
+            </button>
+          </span>
         ))}
       </div>
 

@@ -13,9 +13,7 @@ interface ConversionOptionsProps {
   settings: ConversionSettings;
   onChange: (settings: ConversionSettings) => void;
   disabled?: boolean;
-  /** Show wrap_with_ir_code option (not needed for single code) */
   showWrapOption?: boolean;
-  /** Show format option */
   showFormatOption?: boolean;
 }
 
@@ -24,6 +22,13 @@ export const defaultSettings: ConversionSettings = {
   wrapWithIrCode: true,
   formatOutput: true,
 };
+
+const LEVELS: { value: CompressionLevel; short: string }[] = [
+  { value: 0, short: "0" },
+  { value: 1, short: "1" },
+  { value: 2, short: "2" },
+  { value: 3, short: "3" },
+];
 
 export default function ConversionOptions({
   settings,
@@ -34,70 +39,100 @@ export default function ConversionOptions({
 }: ConversionOptionsProps) {
   const { t } = useTranslation();
 
-  const handleCompressionChange = (level: CompressionLevel) => {
-    onChange({ ...settings, compressionLevel: level });
-  };
-
-  const handleWrapChange = (wrap: boolean) => {
-    onChange({ ...settings, wrapWithIrCode: wrap });
-  };
-
-  const handleFormatChange = (format: boolean) => {
-    onChange({ ...settings, formatOutput: format });
-  };
-
   return (
-    <div className="flex flex-wrap gap-4 items-center">
-      {/* Compression Level */}
-      <div className="flex items-center gap-2">
-        <label className="text-sm text-gray-400">{t.options.compression}</label>
-        <select
-          value={settings.compressionLevel}
-          onChange={(e) =>
-            handleCompressionChange(Number(e.target.value) as CompressionLevel)
-          }
-          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          disabled={disabled}
+    <div className="flex flex-wrap gap-x-6 gap-y-3 items-center">
+      {/* Compression as radio-strip — быстрее и понятнее select'a */}
+      <div className="flex items-center gap-3">
+        <span className="label">Compression</span>
+        <div
+          className="flex border"
+          style={{ borderColor: "var(--color-rule)" }}
+          role="radiogroup"
+          aria-label="Compression level"
         >
-          <option value={0}>{t.options.level0}</option>
-          <option value={1}>{t.options.level1}</option>
-          <option value={2}>{t.options.level2}</option>
-          <option value={3}>{t.options.level3}</option>
-        </select>
+          {LEVELS.map((lvl) => {
+            const active = settings.compressionLevel === lvl.value;
+            return (
+              <button
+                key={lvl.value}
+                type="button"
+                onClick={() =>
+                  onChange({ ...settings, compressionLevel: lvl.value })
+                }
+                disabled={disabled}
+                role="radio"
+                aria-checked={active}
+                title={t.options[`level${lvl.value}` as keyof typeof t.options]}
+                className="px-3 py-1.5 text-[13px] tabular-nums transition-colors disabled:cursor-not-allowed"
+                style={{
+                  background: active
+                    ? "color-mix(in oklab, var(--color-amber) 15%, transparent)"
+                    : "transparent",
+                  color: active
+                    ? "var(--color-amber)"
+                    : "var(--color-text-mute)",
+                  borderLeft:
+                    lvl.value !== 0
+                      ? "1px solid var(--color-rule)"
+                      : undefined,
+                }}
+              >
+                {lvl.short}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Wrap Option */}
       {showWrapOption && (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.wrapWithIrCode}
-            onChange={(e) => handleWrapChange(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-            disabled={disabled}
-          />
-          <span className="text-sm text-gray-300">
-            {t.options.wrapWithIrCode}{" "}
-            <code className="text-blue-400 bg-gray-800 px-1 rounded">
-              ir_code_to_send
-            </code>
-          </span>
-        </label>
+        <Check
+          label={t.options.wrapWithIrCode}
+          checked={settings.wrapWithIrCode}
+          onChange={(v) => onChange({ ...settings, wrapWithIrCode: v })}
+          disabled={disabled}
+        />
       )}
 
-      {/* Format Option */}
       {showFormatOption && (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.formatOutput}
-            onChange={(e) => handleFormatChange(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-            disabled={disabled}
-          />
-          <span className="text-sm text-gray-300">{t.options.formatJson}</span>
-        </label>
+        <Check
+          label={t.options.formatJson}
+          checked={settings.formatOutput}
+          onChange={(v) => onChange({ ...settings, formatOutput: v })}
+          disabled={disabled}
+        />
       )}
     </div>
+  );
+}
+
+function Check({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        className="w-3.5 h-3.5"
+      />
+      <span
+        className="label"
+        style={{
+          color: checked ? "var(--color-text)" : "var(--color-text-mute)",
+        }}
+      >
+        {label}
+      </span>
+    </label>
   );
 }

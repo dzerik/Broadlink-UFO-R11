@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "@/i18n";
 import {
   IRConverter,
@@ -16,8 +16,6 @@ import ConversionOptions, {
 } from "./ConversionOptions";
 import type { SmartIRData } from "@/types";
 
-// Выше этого порога live-валидация (JSON.parse на каждый keystroke)
-// ощутимо тормозит ввод — валидируем только по нажатию "Convert".
 const LIVE_VALIDATION_MAX_CHARS = 500_000;
 
 export default function TwoPanelEditor() {
@@ -32,6 +30,7 @@ export default function TwoPanelEditor() {
     inputSize: number;
     outputSize: number;
   } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const validateJson = useCallback(
     (json: string): SmartIRData | null => {
@@ -60,13 +59,8 @@ export default function TwoPanelEditor() {
   const handleInputChange = useCallback(
     (value: string) => {
       setInputJson(value);
-      // Пропускаем синхронную валидацию для очень больших вставок — иначе
-      // JSON.parse блокирует UI на каждое нажатие клавиши.
-      if (value.length <= LIVE_VALIDATION_MAX_CHARS) {
-        validateJson(value);
-      } else {
-        setInputError(null);
-      }
+      if (value.length <= LIVE_VALIDATION_MAX_CHARS) validateJson(value);
+      else setInputError(null);
     },
     [validateJson]
   );
@@ -74,44 +68,31 @@ export default function TwoPanelEditor() {
   const handleConvert = async () => {
     const parsed = validateJson(inputJson);
     if (!parsed) return;
-
     setLoading(true);
     setOutputJson("");
     setStats(null);
-
-    // Уступаем event-loop, чтобы React закоммитил loading=true до синхронной
-    // работы конвертера (иначе setLoading true→false батчатся в один рендер).
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     try {
       const converter = new IRConverter(settings.compressionLevel);
       const result = converter.processSmartIRData(parsed, settings.wrapWithIrCode);
-
-      let outputContent = result as Record<string, unknown>;
-
-      if (!settings.wrapWithIrCode) {
-        outputContent = unwrapIrCodes(outputContent);
-      }
-
-      const formattedOutput = settings.formatOutput
-        ? JSON.stringify(outputContent, null, 2)
-        : JSON.stringify(outputContent);
-      setOutputJson(formattedOutput);
-
-      const commandsCount = countSmartIRCommands(parsed.commands);
+      let content = result as Record<string, unknown>;
+      if (!settings.wrapWithIrCode) content = unwrapIrCodes(content);
+      const formatted = settings.formatOutput
+        ? JSON.stringify(content, null, 2)
+        : JSON.stringify(content);
+      setOutputJson(formatted);
       setStats({
-        commands: commandsCount,
+        commands: countSmartIRCommands(parsed.commands),
         inputSize: inputJson.length,
-        outputSize: formattedOutput.length,
+        outputSize: formatted.length,
       });
     } catch (e) {
-      if (e instanceof BTUError) {
-        setInputError(e.message);
-      } else {
-        setInputError(
-          `${t.errors.error}: ${e instanceof Error ? e.message : t.validation.unknownError}`
-        );
-      }
+      setInputError(
+        e instanceof BTUError
+          ? e.message
+          : `${t.errors.error}: ${e instanceof Error ? e.message : t.validation.unknownError}`
+      );
     } finally {
       setLoading(false);
     }
@@ -119,9 +100,7 @@ export default function TwoPanelEditor() {
 
   const handleFormat = () => {
     const parsed = validateJson(inputJson);
-    if (parsed) {
-      setInputJson(JSON.stringify(parsed, null, 2));
-    }
+    if (parsed) setInputJson(JSON.stringify(parsed, null, 2));
   };
 
   const handleClear = () => {
@@ -131,10 +110,11 @@ export default function TwoPanelEditor() {
     setStats(null);
   };
 
-  const handleCopyOutput = () => {
-    if (outputJson) {
-      navigator.clipboard.writeText(outputJson);
-    }
+  const handleCopy = async () => {
+    if (!outputJson) return;
+    await navigator.clipboard.writeText(outputJson);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
   };
 
   const handleDownload = () => {
@@ -143,9 +123,9 @@ export default function TwoPanelEditor() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col gap-5">
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-4 mb-4 items-center">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <ConversionOptions
           settings={settings}
           onChange={setSettings}
@@ -153,160 +133,153 @@ export default function TwoPanelEditor() {
           showWrapOption
           showFormatOption
         />
+        <div className="flex-1" />
+        <button
+          onClick={handleFormat}
+          disabled={loading || !inputJson.trim()}
+          className="label transition-colors disabled:cursor-not-allowed"
+          style={{ color: "var(--color-text-mute)" }}
+        >
+          {t.editor.format}
+        </button>
+        <button
+          onClick={handleClear}
+          disabled={loading}
+          className="label transition-colors disabled:cursor-not-allowed"
+          style={{ color: "var(--color-text-mute)" }}
+        >
+          {t.editor.clear}
+        </button>
         <button
           onClick={handleConvert}
           disabled={loading || !inputJson.trim() || !!inputError}
-          className="flex-1 lg:flex-none lg:min-w-[200px] py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+          className="px-4 py-2 text-[12px] tracking-[0.2em] uppercase font-medium border transition-colors disabled:cursor-not-allowed"
+          style={{
+            background:
+              loading || !inputJson.trim() || !!inputError
+                ? "transparent"
+                : "color-mix(in oklab, var(--color-amber) 15%, transparent)",
+            borderColor:
+              loading || !inputJson.trim() || !!inputError
+                ? "var(--color-rule)"
+                : "var(--color-amber)",
+            color:
+              loading || !inputJson.trim() || !!inputError
+                ? "var(--color-text-dim)"
+                : "var(--color-amber)",
+          }}
         >
-          {loading ? (
-            <>
-              <svg
-                className="animate-spin h-5 w-5"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              {t.convertForm.converting}
-            </>
-          ) : (
-            <>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              {t.editor.convert}
-            </>
-          )}
+          {loading ? "Encoding…" : `${t.editor.convert} →`}
         </button>
-        <div className="flex-1" />
-
-        <div className="flex gap-2">
-          <button
-            onClick={handleFormat}
-            disabled={loading || !inputJson.trim()}
-            className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded transition-colors"
-          >
-            {t.editor.format}
-          </button>
-          <button
-            onClick={handleClear}
-            disabled={loading}
-            className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded transition-colors"
-          >
-            {t.editor.clear}
-          </button>
-        </div>
       </div>
 
-      {/* Two panels */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-        {/* Input panel */}
-        <div className="flex flex-col min-h-[500px] lg:min-h-[600px]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-300">
-              {t.editor.inputLabel}
-            </span>
-            <span className="text-xs text-gray-500">
-              {inputJson.length.toLocaleString()} {t.editor.chars}
-            </span>
-          </div>
-          <div className="flex-1 min-h-0">
-            <JsonEditor
-              value={inputJson}
-              onChange={handleInputChange}
-              error={inputError}
-              placeholder={t.editor.placeholder}
-              className="h-full"
-            />
-          </div>
-        </div>
+      {/* Panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-[560px]">
+        <PanelFrame
+          label={t.editor.inputLabel}
+          meta={`${inputJson.length.toLocaleString()} c`}
+        >
+          <JsonEditor
+            value={inputJson}
+            onChange={handleInputChange}
+            error={inputError}
+            placeholder={t.editor.placeholder}
+            className="h-full"
+          />
+        </PanelFrame>
 
-        {/* Output panel */}
-        <div className="flex flex-col min-h-[500px] lg:min-h-[600px]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-300">
-              {t.editor.outputLabel}
-            </span>
-            <div className="flex items-center gap-2">
-              {stats && (
-                <span className="text-xs text-gray-500">
-                  {stats.commands} {t.editor.commands} ·{" "}
-                  {stats.outputSize.toLocaleString()} {t.editor.chars}
-                </span>
-              )}
-              {outputJson && (
-                <>
-                  <button
-                    onClick={handleCopyOutput}
-                    className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-                  >
-                    {t.editor.copyOutput}
-                  </button>
-                  <button
-                    onClick={handleDownload}
-                    className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-                  >
-                    {t.editor.download}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 min-h-0">
-            <JsonEditor
-              value={outputJson}
-              readOnly
-              placeholder={t.editor.resultPlaceholder}
-              className="h-full"
-            />
-          </div>
-        </div>
+        <PanelFrame
+          label={t.editor.outputLabel}
+          meta={
+            stats
+              ? `${stats.commands} ${t.editor.commands} · ${stats.outputSize.toLocaleString()} c`
+              : undefined
+          }
+          actions={
+            outputJson && (
+              <>
+                <button
+                  onClick={handleCopy}
+                  className="label transition-colors"
+                  style={{
+                    color: copied
+                      ? "var(--color-ok)"
+                      : "var(--color-text-mute)",
+                  }}
+                >
+                  {copied ? "Copied ✓" : t.editor.copyOutput}
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="label transition-colors"
+                  style={{ color: "var(--color-amber)" }}
+                >
+                  {t.editor.download} ↓
+                </button>
+              </>
+            )
+          }
+        >
+          <JsonEditor
+            value={outputJson}
+            readOnly
+            placeholder={t.editor.resultPlaceholder}
+            className="h-full"
+          />
+        </PanelFrame>
       </div>
 
-      {/* Stats */}
-      <div className="mt-4 flex items-center gap-4">
-        {stats && (
-          <div className="hidden lg:flex items-center gap-4 text-sm text-gray-400">
-            <span>
-              {t.editor.sizeRatio}{" "}
-              <span className="text-white">
-                {((stats.outputSize / stats.inputSize) * 100).toFixed(1)}%
-              </span>{" "}
-              {t.editor.ofOriginal}
+      {stats && (
+        <div
+          className="flex flex-wrap gap-x-8 gap-y-1 pt-3 border-t"
+          style={{ borderColor: "var(--color-rule)" }}
+        >
+          <span className="flex items-baseline gap-2">
+            <span className="label">{t.editor.sizeRatio}</span>
+            <span
+              className="text-[13px] tabular-nums"
+              style={{ color: "var(--color-amber)" }}
+            >
+              {((stats.outputSize / stats.inputSize) * 100).toFixed(1)}%
             </span>
-          </div>
-        )}
+            <span className="label">{t.editor.ofOriginal}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PanelFrame({
+  label,
+  meta,
+  actions,
+  children,
+}: {
+  label: string;
+  meta?: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col min-h-0">
+      <div
+        className="flex items-center justify-between pb-1 mb-2 border-b"
+        style={{ borderColor: "var(--color-rule)" }}
+      >
+        <div className="flex items-baseline gap-3">
+          <span className="label">{label}</span>
+          {meta && <span className="label">{meta}</span>}
+        </div>
+        {actions && <div className="flex items-baseline gap-3">{actions}</div>}
       </div>
+      <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
 }
 
 function unwrapIrCodes(obj: Record<string, unknown>): Record<string, unknown> {
-  // Object.create(null): защита от prototype pollution через user-controlled key.
   const result: Record<string, unknown> = Object.create(null);
-
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "string") {
       try {
@@ -335,6 +308,5 @@ function unwrapIrCodes(obj: Record<string, unknown>): Record<string, unknown> {
       result[key] = value;
     }
   }
-
   return result;
 }

@@ -2,8 +2,6 @@
 
 import { useCallback, useMemo } from "react";
 
-// Порог, выше которого пропускаем подсветку — на очень больших значениях
-// проход по всем токенам блокирует main-thread.
 const HIGHLIGHT_MAX_CHARS = 200_000;
 
 interface JsonEditorProps {
@@ -14,7 +12,6 @@ interface JsonEditorProps {
   label?: string;
   error?: string | null;
   className?: string;
-  /** Максимальное количество строк до включения скролла */
   maxLines?: number;
 }
 
@@ -22,9 +19,10 @@ const escapeHtml = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
- * Одноходовой JSON-aware токенизатор для подсветки. В отличие от
- * regex-каскада, корректно обрабатывает скобки внутри строковых литералов —
- * `"[on]"` целиком помечается как строка, а `[` не окрашивается как скобка.
+ * Одноходовой JSON-aware токенизатор для подсветки. Скобки внутри
+ * строковых литералов не окрашиваются как структурные — trace-aware
+ * подсветка в signal-scope палитре: amber для ключей, cyan для значений,
+ * muted для чисел, приглушённый цвет для скобок.
  */
 function highlightJson(json: string): string {
   if (!json) return "";
@@ -49,17 +47,20 @@ function highlightJson(json: string): string {
         }
         j++;
       }
-      // Ключ vs значение — по следующему не-пробельному символу.
       let k = j;
       while (k < n && (json[k] === " " || json[k] === "\t")) k++;
-      const cls = json[k] === ":" ? "text-purple-400" : "text-green-400";
-      out.push(`<span class="${cls}">${escapeHtml(json.slice(i, j))}</span>`);
+      const color = json[k] === ":" ? "var(--color-amber)" : "var(--color-cyan)";
+      out.push(
+        `<span style="color:${color}">${escapeHtml(json.slice(i, j))}</span>`
+      );
       i = j;
       continue;
     }
 
     if (ch === "{" || ch === "}" || ch === "[" || ch === "]") {
-      out.push(`<span class="text-gray-500">${ch}</span>`);
+      out.push(
+        `<span style="color:var(--color-text-mute)">${ch}</span>`
+      );
       i++;
       continue;
     }
@@ -77,23 +78,22 @@ function highlightJson(json: string): string {
         if (json[j] === "+" || json[j] === "-") j++;
         while (j < n && json[j] >= "0" && json[j] <= "9") j++;
       }
-      out.push(`<span class="text-amber-400">${json.slice(i, j)}</span>`);
+      out.push(
+        `<span style="color:var(--color-text)">${json.slice(i, j)}</span>`
+      );
       i = j;
       continue;
     }
 
-    if (json.startsWith("true", i)) {
-      out.push('<span class="text-blue-400">true</span>');
-      i += 4;
-      continue;
-    }
-    if (json.startsWith("null", i)) {
-      out.push('<span class="text-blue-400">null</span>');
+    if (json.startsWith("true", i) || json.startsWith("null", i)) {
+      out.push(
+        `<span style="color:var(--color-ok)">${json.substr(i, 4)}</span>`
+      );
       i += 4;
       continue;
     }
     if (json.startsWith("false", i)) {
-      out.push('<span class="text-blue-400">false</span>');
+      out.push(`<span style="color:var(--color-danger)">false</span>`);
       i += 5;
       continue;
     }
@@ -109,7 +109,7 @@ export default function JsonEditor({
   value,
   onChange,
   readOnly = false,
-  placeholder = "Вставьте JSON здесь...",
+  placeholder = "Paste JSON here…",
   label,
   error,
   className = "",
@@ -130,26 +130,28 @@ export default function JsonEditor({
   const lineCount = useMemo(() => value.split("\n").length, [value]);
   const needsScroll = lineCount > maxLines;
   const maxHeight = `${maxLines * 20}px`;
-  const scrollStyle = needsScroll ? { maxHeight, overflowY: "auto" as const } : undefined;
+  const scrollStyle = needsScroll
+    ? { maxHeight, overflowY: "auto" as const }
+    : undefined;
 
-  // readOnly-режим: всегда рендерим одну DOM-структуру (<pre>) — переход
-  // между пустым и непустым значением не вызывает unmount/remount.
+  const baseStyle = {
+    background: "var(--color-panel)",
+    borderColor: error ? "var(--color-danger)" : "var(--color-rule)",
+    color: error ? "var(--color-danger)" : "var(--color-text)",
+  };
+
   if (readOnly) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
-        {label && (
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {label}
-          </label>
-        )}
+        {label && <span className="label mb-1">{label}</span>}
         <div className="relative flex-1 min-h-0">
           <pre
-            className="w-full h-full p-4 bg-gray-900 border border-gray-700 rounded-lg text-sm font-mono overflow-auto whitespace-pre-wrap break-all"
-            style={scrollStyle}
+            className="w-full h-full p-3 text-[12px] leading-relaxed overflow-auto whitespace-pre-wrap break-all border"
+            style={{ ...baseStyle, ...scrollStyle }}
             dangerouslySetInnerHTML={{
               __html:
                 value.length === 0
-                  ? `<span class="text-gray-600">${escapeHtml(placeholder)}</span>`
+                  ? `<span style="color:var(--color-text-dim)">${escapeHtml(placeholder)}</span>`
                   : highlightedHtml || escapeHtml(value),
             }}
           />
@@ -160,26 +162,25 @@ export default function JsonEditor({
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
-      {label && (
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          {label}
-        </label>
-      )}
+      {label && <span className="label mb-1">{label}</span>}
       <div className="relative flex-1 min-h-0">
         <textarea
           value={value}
           onChange={handleChange}
           placeholder={placeholder}
           spellCheck={false}
-          style={scrollStyle}
-          className={`w-full h-full p-4 bg-gray-900 border rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-            error
-              ? "border-red-500 text-red-300"
-              : "border-gray-700 text-gray-300"
-          }`}
+          style={{ ...baseStyle, ...scrollStyle }}
+          className="w-full h-full p-3 text-[12px] leading-relaxed resize-none border focus:outline-none focus:border-[color:var(--color-amber-dim)]"
         />
       </div>
-      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && (
+        <p
+          className="mt-2 text-[12px]"
+          style={{ color: "var(--color-danger)" }}
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }

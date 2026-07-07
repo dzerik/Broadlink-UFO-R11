@@ -19,13 +19,14 @@ import type { FileConvertResult } from "@/types";
 export default function FileUpload() {
   const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [settings, setSettings] = useState<ConversionSettings>(defaultSettings);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FileConvertResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const acceptFile = (candidate: File): void => {
+  const acceptFile = (candidate: File) => {
     if (!candidate.name.endsWith(".json")) {
       setError(t.fileUpload.selectJsonFile);
       return;
@@ -40,28 +41,24 @@ export default function FileUpload() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    // Сброс value: без него повторный выбор ТОГО ЖЕ файла не даёт change event.
+    const selected = e.target.files?.[0];
     e.target.value = "";
-    if (selectedFile) acceptFile(selectedFile);
+    if (selected) acceptFile(selected);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) acceptFile(droppedFile);
+    setDragging(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) acceptFile(dropped);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return;
-
     setLoading(true);
     setError(null);
     setResult(null);
-
-    // Уступаем event-loop: React должен закоммитить loading=true до
-    // синхронной работы конвертера.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     try {
@@ -71,64 +68,78 @@ export default function FileUpload() {
         setError(t.validation.mustBeObject);
         return;
       }
-
       const converter = new IRConverter(settings.compressionLevel);
-      const converted = converter.processSmartIRData(parsed, settings.wrapWithIrCode);
-      const commandsProcessed = countSmartIRCommands(parsed.commands);
-
+      const converted = converter.processSmartIRData(
+        parsed,
+        settings.wrapWithIrCode
+      );
       setResult({
         content: converted as Record<string, unknown>,
-        commands_processed: commandsProcessed,
+        commands_processed: countSmartIRCommands(parsed.commands),
       });
     } catch (err) {
-      if (err instanceof BTUError) {
-        setError(err.message);
-      } else if (err instanceof SyntaxError) {
-        setError(t.fileUpload.invalidJson);
-      } else {
-        setError(t.validation.unknownError);
-      }
+      if (err instanceof BTUError) setError(err.message);
+      else if (err instanceof SyntaxError) setError(t.fileUpload.invalidJson);
+      else setError(t.validation.unknownError);
     } finally {
       setLoading(false);
     }
   };
 
-  const downloadResult = () => {
+  const download = () => {
     if (!result) return;
-
-    const jsonContent = settings.formatOutput
-      ? JSON.stringify(result.content, null, 2)
-      : JSON.stringify(result.content);
-
-    const filename = file
-      ? file.name.replace(/\.json$/, "_converted.json")
-      : "converted.json";
-    downloadTextFile(jsonContent, filename);
-  };
-
-  const getPreviewContent = (): string => {
-    if (!result) return "";
     const content = settings.formatOutput
       ? JSON.stringify(result.content, null, 2)
       : JSON.stringify(result.content);
-    return content.length > 2000 ? content.slice(0, 2000) + "..." : content;
+    const name = file
+      ? file.name.replace(/\.json$/, "_converted.json")
+      : "converted.json";
+    downloadTextFile(content, name);
   };
 
+  const previewContent = result
+    ? (() => {
+        const s = settings.formatOutput
+          ? JSON.stringify(result.content, null, 2)
+          : JSON.stringify(result.content);
+        return s.length > 2000 ? s.slice(0, 2000) + "…" : s;
+      })()
+    : "";
+
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <ConversionOptions
-          settings={settings}
-          onChange={setSettings}
-          disabled={loading}
-          showWrapOption
-          showFormatOption
-        />
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <ConversionOptions
+        settings={settings}
+        onChange={setSettings}
+        disabled={loading}
+        showWrapOption
+        showFormatOption
+      />
+
+      <div>
+        <div className="flex items-baseline justify-between mb-2">
+          <span className="label">Source · SmartIR .json</span>
+          <span className="label">{t.fileUpload.onlyJson}</span>
+        </div>
         <div
           onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
           onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-gray-600 hover:border-gray-500 rounded-lg p-8 text-center cursor-pointer transition-colors duration-200"
+          role="button"
+          tabIndex={0}
+          className="p-8 text-center cursor-pointer transition-colors border border-dashed"
+          style={{
+            borderColor: dragging
+              ? "var(--color-amber)"
+              : "var(--color-rule)",
+            background: dragging
+              ? "color-mix(in oklab, var(--color-amber) 6%, transparent)"
+              : "transparent",
+          }}
         >
           <input
             ref={fileInputRef}
@@ -137,81 +148,100 @@ export default function FileUpload() {
             onChange={handleFileChange}
             className="hidden"
           />
-          <div className="space-y-2">
-            <svg
-              className="mx-auto h-12 w-12 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
-            <p className="text-gray-400">
-              {file ? (
-                <span className="text-white font-medium">{file.name}</span>
-              ) : (
-                <>
-                  {t.fileUpload.dropzone}{" "}
-                  <span className="text-blue-400">{t.fileUpload.clickToSelect}</span>
-                </>
-              )}
+          {file ? (
+            <div className="space-y-1">
+              <p className="text-[13px]" style={{ color: "var(--color-text)" }}>
+                {file.name}
+              </p>
+              <p className="label">
+                {(file.size / 1024).toFixed(1)} KB · click to replace
+              </p>
+            </div>
+          ) : (
+            <p className="label">
+              {t.fileUpload.dropzone} {t.fileUpload.clickToSelect}
             </p>
-            <p className="text-xs text-gray-500">{t.fileUpload.onlyJson}</p>
-          </div>
+          )}
         </div>
+      </div>
 
-        <button
-          type="submit"
-          disabled={loading || !file}
-          className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200"
-        >
-          {loading ? t.convertForm.converting : t.fileUpload.convertFile}
-        </button>
-      </form>
+      <button
+        type="submit"
+        disabled={loading || !file}
+        className="w-full py-3 text-[13px] tracking-[0.2em] uppercase font-medium border transition-colors disabled:cursor-not-allowed"
+        style={{
+          background:
+            loading || !file
+              ? "transparent"
+              : "color-mix(in oklab, var(--color-amber) 12%, transparent)",
+          borderColor:
+            loading || !file ? "var(--color-rule)" : "var(--color-amber)",
+          color:
+            loading || !file ? "var(--color-text-dim)" : "var(--color-amber)",
+        }}
+      >
+        {loading ? "Encoding…" : t.fileUpload.convertFile}
+      </button>
 
       {error && (
-        <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-          <p className="font-medium">{t.errors.error}</p>
-          <p className="text-sm mt-1">{error}</p>
+        <div
+          className="border-l-2 px-4 py-2 text-[13px]"
+          style={{
+            borderColor: "var(--color-danger)",
+            color: "var(--color-danger)",
+          }}
+        >
+          <span className="label mr-2" style={{ color: "var(--color-danger)" }}>
+            Error
+          </span>
+          {error}
         </div>
       )}
 
       {result && (
-        <div className="mt-6 space-y-4">
-          <div className="p-4 bg-green-900/30 border border-green-700 rounded-lg">
-            <div className="flex justify-between items-center mb-3">
-              <div>
-                <p className="text-sm font-medium text-green-300">
-                  {t.fileUpload.conversionComplete}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {t.fileUpload.commandsProcessed} {result.commands_processed}
-                </p>
-              </div>
-              <button
-                onClick={downloadResult}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium transition-colors"
-              >
-                {t.fileUpload.downloadJson}
-              </button>
+        <div className="space-y-4">
+          <div
+            className="flex items-baseline justify-between pt-4 border-t"
+            style={{ borderColor: "var(--color-rule)" }}
+          >
+            <div className="flex items-baseline gap-6">
+              <span className="label" style={{ color: "var(--color-ok)" }}>
+                {t.fileUpload.conversionComplete}
+              </span>
+              <span className="flex items-baseline gap-2">
+                <span className="label">{t.fileUpload.commandsProcessed}</span>
+                <span
+                  className="text-[13px] tabular-nums"
+                  style={{ color: "var(--color-amber)" }}
+                >
+                  {result.commands_processed}
+                </span>
+              </span>
             </div>
+            <button
+              type="button"
+              onClick={download}
+              className="label transition-colors"
+              style={{ color: "var(--color-amber)" }}
+            >
+              {t.fileUpload.downloadJson} ↓
+            </button>
           </div>
 
-          <div className="p-4 bg-gray-800 border border-gray-700 rounded-lg">
-            <p className="text-sm font-medium text-gray-300 mb-2">
-              {t.fileUpload.previewTitle}
-            </p>
-            <pre className="text-xs text-gray-400 overflow-auto max-h-64 bg-gray-900 p-3 rounded">
-              {getPreviewContent()}
+          <div>
+            <div className="label mb-1">{t.fileUpload.previewTitle}</div>
+            <pre
+              className="p-3 text-[12px] leading-relaxed border max-h-72 overflow-auto whitespace-pre"
+              style={{
+                background: "var(--color-panel)",
+                borderColor: "var(--color-rule)",
+              }}
+            >
+              {previewContent}
             </pre>
           </div>
         </div>
       )}
-    </div>
+    </form>
   );
 }

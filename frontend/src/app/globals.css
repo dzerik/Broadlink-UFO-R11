@@ -1,45 +1,89 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0a;
-  --color-foreground: #ededed;
+  /* Warm-scope palette — деликатный фосфорный фон, тёплые тона,
+     инструментальный signal-scope. НЕ Tailwind slate/blue-purple. */
+  --color-bg: #0e1416;
+  --color-panel: #141b1e;
+  --color-panel-lift: #1a2225;
+  --color-rule: #233034;
+  --color-rule-strong: #3d4c50;
+
+  --color-text: #e6dcc4;
+  --color-text-mute: #8a8471;
+  --color-text-dim: #5d5a4f;
+
+  --color-amber: #f0b455;
+  --color-amber-dim: #a37936;
+  --color-cyan: #77b8b4;
+  --color-danger: #d97070;
+  --color-ok: #9fbb70;
+
+  /* Всё моно — instrument-panel единство. */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono",
+    "Menlo", "Consolas", monospace;
+  --default-font-family: var(--font-mono);
 }
 
 @layer base {
-  :root {
-    --background: var(--color-background);
-    --foreground: var(--color-foreground);
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum" 1, "cv02" 1, "ss01" 1;
   }
 
-  @media (prefers-color-scheme: light) {
-    :root {
-      --background: #ffffff;
-      --foreground: #171717;
-    }
+  /* Инструментальные small-caps лейблы. Использую как .label. */
+  .label {
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-size: 0.6875rem; /* 11px */
+    color: var(--color-text-mute);
+    font-weight: 500;
   }
-}
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
+  .rule {
+    background: var(--color-rule);
+    height: 1px;
+    border: 0;
+  }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+  /* Селект/чекбокс тёмная тема */
+  select,
+  input[type="text"],
+  input[type="file"],
+  textarea {
+    color: var(--color-text);
+    background: var(--color-panel);
+    border-color: var(--color-rule);
+  }
 
-::-webkit-scrollbar-track {
-  background: #1a1a1a;
-}
+  input[type="checkbox"] {
+    accent-color: var(--color-amber);
+  }
 
-::-webkit-scrollbar-thumb {
-  background: #4a4a4a;
-  border-radius: 4px;
-}
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-rule);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-rule-strong);
+  }
+  * {
+    scrollbar-color: var(--color-rule) var(--color-bg);
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #5a5a5a;
+  /* Селекция в тон */
+  ::selection {
+    background: color-mix(in oklab, var(--color-amber) 40%, transparent);
+    color: var(--color-text);
+  }
 }

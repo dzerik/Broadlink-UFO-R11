@@ -1,25 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { IRConverter, BTUError } from "@/lib/converter";
+import { BroadlinkDecoder } from "@/lib/converter/broadlink-decoder";
 import { useTranslation } from "@/i18n";
 import ConversionOptions, {
   defaultSettings,
   type ConversionSettings,
 } from "./ConversionOptions";
+import WaveformTrace from "./WaveformTrace";
 import type { ConvertResult } from "@/types";
 
-interface ConvertFormProps {
-  onResult?: (result: ConvertResult) => void;
-}
+const TRACE_MAX_INPUT_CHARS = 8_000;
 
-export default function ConvertForm({ onResult }: ConvertFormProps) {
+export default function ConvertForm({
+  onResult,
+}: {
+  onResult?: (result: ConvertResult) => void;
+}) {
   const { t } = useTranslation();
   const [command, setCommand] = useState("");
   const [settings, setSettings] = useState<ConversionSettings>(defaultSettings);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ConvertResult | null>(null);
+  const [copied, setCopied] = useState<"ir" | "mqtt" | null>(null);
+
+  // Живая осциллограмма — пытаемся декодировать; при ошибке молчим.
+  const decodedTimings = useMemo<number[] | null>(() => {
+    const trimmed = command.trim();
+    if (!trimmed || trimmed.length > TRACE_MAX_INPUT_CHARS) return null;
+    try {
+      return new BroadlinkDecoder().decode(trimmed);
+    } catch {
+      return null;
+    }
+  }, [command]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,17 +44,12 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
     setLoading(true);
     setError(null);
     setResult(null);
-
-    // Уступаем event-loop, чтобы React успел закоммитить loading=true до
-    // синхронной работы конвертера — иначе setLoading(true)/setLoading(false)
-    // батчатся в один рендер и спиннер никогда не показывается.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     try {
       const converter = new IRConverter(settings.compressionLevel);
       const irCode = converter.convert(command.trim());
       const mqttPayload = JSON.stringify({ ir_code_to_send: irCode });
-
       const response: ConvertResult = {
         ir_code: irCode,
         mqtt_payload: mqttPayload,
@@ -48,31 +59,57 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
       setResult(response);
       onResult?.(response);
     } catch (err) {
-      if (err instanceof BTUError) {
-        setError(err.message);
-      } else {
-        setError(t.validation.unknownError);
-      }
+      setError(
+        err instanceof BTUError ? err.message : t.validation.unknownError
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copy = async (text: string, which: "ir" | "mqtt") => {
+    await navigator.clipboard.writeText(text);
+    setCopied(which);
+    setTimeout(() => setCopied((c) => (c === which ? null : c)), 1400);
   };
 
-  const formatMqttPayload = (payload: string): string => {
-    if (!settings.formatOutput) return payload;
-    try {
-      return JSON.stringify(JSON.parse(payload), null, 2);
-    } catch {
-      return payload;
-    }
-  };
+  const formatMqtt = (payload: string) =>
+    settings.formatOutput
+      ? (() => {
+          try {
+            return JSON.stringify(JSON.parse(payload), null, 2);
+          } catch {
+            return payload;
+          }
+        })()
+      : payload;
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div>
+        <div className="flex items-baseline justify-between mb-2">
+          <label htmlFor="command" className="label">
+            Input · Broadlink base64
+          </label>
+          <span className="label">{command.length.toLocaleString()} c</span>
+        </div>
+        <textarea
+          id="command"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          placeholder={t.convertForm.inputPlaceholder}
+          className="w-full h-32 p-4 text-[13px] leading-relaxed resize-none border focus:outline-none focus:border-[color:var(--color-amber-dim)]"
+          style={{
+            background: "var(--color-panel)",
+            borderColor: "var(--color-rule)",
+            color: "var(--color-text)",
+          }}
+          disabled={loading}
+        />
+      </div>
+
+      <WaveformTrace timings={decodedTimings} />
+
       <ConversionOptions
         settings={settings}
         onChange={setSettings}
@@ -80,96 +117,134 @@ export default function ConvertForm({ onResult }: ConvertFormProps) {
         showWrapOption={false}
         showFormatOption
       />
-      <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-        <div>
-          <label
-            htmlFor="command"
-            className="block text-sm font-medium text-gray-300 mb-2"
-          >
-            {t.convertForm.inputLabel}
-          </label>
-          <textarea
-            id="command"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            placeholder={t.convertForm.inputPlaceholder}
-            className="w-full h-32 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm resize-none"
-            disabled={loading}
-          />
-        </div>
 
-        <button
-          type="submit"
-          disabled={loading || !command.trim()}
-          className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200"
-        >
-          {loading ? t.convertForm.converting : t.convertForm.convertButton}
-        </button>
-      </form>
+      <button
+        type="submit"
+        disabled={loading || !command.trim()}
+        className="w-full py-3 text-[13px] tracking-[0.2em] uppercase font-medium border transition-colors disabled:cursor-not-allowed"
+        style={{
+          background:
+            loading || !command.trim()
+              ? "transparent"
+              : "color-mix(in oklab, var(--color-amber) 12%, transparent)",
+          borderColor:
+            loading || !command.trim()
+              ? "var(--color-rule)"
+              : "var(--color-amber)",
+          color:
+            loading || !command.trim()
+              ? "var(--color-text-dim)"
+              : "var(--color-amber)",
+        }}
+      >
+        {loading ? "Encoding…" : "Encode →"}
+      </button>
 
       {error && (
-        <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-          <p className="font-medium">{t.errors.error}</p>
-          <p className="text-sm mt-1">{error}</p>
+        <div
+          className="border-l-2 px-4 py-2 text-[13px]"
+          style={{ borderColor: "var(--color-danger)", color: "var(--color-danger)" }}
+        >
+          <span className="label mr-2" style={{ color: "var(--color-danger)" }}>
+            Error
+          </span>
+          {error}
         </div>
       )}
 
       {result && (
-        <div className="mt-6 space-y-4">
-          <div className="p-4 bg-green-900/30 border border-green-700 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <p className="text-sm font-medium text-green-300">
-                {t.convertForm.resultTitle}
-              </p>
-              <button
-                onClick={() => copyToClipboard(result.ir_code)}
-                className="text-xs px-2 py-1 bg-green-800 hover:bg-green-700 rounded transition-colors"
-              >
-                {t.convertForm.copy}
-              </button>
-            </div>
-            <p className="font-mono text-xs text-gray-300 break-all bg-gray-900 p-2 rounded">
-              {result.ir_code}
-            </p>
-          </div>
+        <div className="space-y-5">
+          <ResultBlock
+            label="Output · UFO-R11 base64"
+            value={result.ir_code}
+            onCopy={() => copy(result.ir_code, "ir")}
+            copied={copied === "ir"}
+          />
+          <ResultBlock
+            label="MQTT payload"
+            value={formatMqtt(result.mqtt_payload)}
+            onCopy={() => copy(result.mqtt_payload, "mqtt")}
+            copied={copied === "mqtt"}
+          />
 
-          <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <p className="text-sm font-medium text-blue-300">
-                {t.convertForm.mqttPayload}
-              </p>
-              <button
-                onClick={() => copyToClipboard(result.mqtt_payload)}
-                className="text-xs px-2 py-1 bg-blue-800 hover:bg-blue-700 rounded transition-colors"
-              >
-                {t.convertForm.copy}
-              </button>
-            </div>
-            <pre className="font-mono text-xs text-gray-300 break-all bg-gray-900 p-2 rounded whitespace-pre-wrap">
-              {formatMqttPayload(result.mqtt_payload)}
-            </pre>
-          </div>
-
-          <div className="flex gap-4 text-sm text-gray-400">
-            <p>
-              {t.convertForm.originalSize} {result.original_length}{" "}
-              {t.convertForm.chars}
-            </p>
-            <p>
-              {t.convertForm.resultSize} {result.result_length}{" "}
-              {t.convertForm.chars}
-            </p>
-            <p>
-              {t.convertForm.efficiency}{" "}
-              {(
+          <div className="flex flex-wrap gap-x-6 gap-y-1 pt-2 border-t"
+            style={{ borderColor: "var(--color-rule)" }}>
+            <Stat label="in" value={`${result.original_length} c`} />
+            <Stat label="out" value={`${result.result_length} c`} />
+            <Stat
+              label="ratio"
+              value={`${(
                 (1 - result.result_length / result.original_length) *
                 100
-              ).toFixed(1)}
-              %
-            </p>
+              ).toFixed(1)}%`}
+              accent
+            />
           </div>
         </div>
       )}
+    </form>
+  );
+}
+
+function ResultBlock({
+  label,
+  value,
+  onCopy,
+  copied,
+}: {
+  label: string;
+  value: string;
+  onCopy: () => void;
+  copied: boolean;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="label">{label}</span>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="label transition-colors"
+          style={{
+            color: copied ? "var(--color-ok)" : "var(--color-text-mute)",
+          }}
+        >
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+      <pre
+        className="p-3 text-[12px] leading-relaxed break-all whitespace-pre-wrap border max-h-64 overflow-auto"
+        style={{
+          background: "var(--color-panel)",
+          borderColor: "var(--color-rule)",
+        }}
+      >
+        {value}
+      </pre>
     </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <span className="flex items-baseline gap-2">
+      <span className="label">{label}</span>
+      <span
+        className="text-[13px] tabular-nums"
+        style={{
+          color: accent ? "var(--color-amber)" : "var(--color-text)",
+        }}
+      >
+        {value}
+      </span>
+    </span>
   );
 }
