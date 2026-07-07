@@ -7,6 +7,13 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    ignore:
+      # ESLint 10 несовместим с eslint-config-next: eslint-plugin-react,
+      # eslint-plugin-import и eslint-plugin-jsx-a11y (последние версии) не
+      # поддерживают ESLint 10. Разблокировать после релиза eslint-config-next
+      # с поддержкой ESLint 10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
