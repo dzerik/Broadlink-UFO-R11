@@ -1,4 +1,5 @@
 import { IRConverter } from './index';
+import { IRCodeError } from './errors';
 
 export interface SmartIRData {
   [key: string]: unknown;
@@ -79,16 +80,28 @@ function processCommands(
       processed[key] = wrapWithIrCode
         ? `{"ir_code_to_send": "${irCode}"}`
         : irCode;
-    } else if (Array.isArray(value)) {
-      processed[key] = value;
-    } else if (value !== null && typeof value === 'object') {
+    } else if (
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
       processed[key] = processCommands(
         value as Record<string, unknown>,
         converter,
         wrapWithIrCode
       );
     } else {
-      processed[key] = value;
+      // Массивы, числа, boolean, null — не поддерживаются как значения
+      // команд. Молчаливый passthrough давал внешне валидный JSON, но
+      // MOES UFO-R11 не смог бы его обработать. Явная ошибка лучше.
+      const kind = value === null
+        ? 'null'
+        : Array.isArray(value)
+          ? 'array'
+          : typeof value;
+      throw new IRCodeError(
+        `Unsupported command value type at "${key}": ${kind} (expected string or nested object)`
+      );
     }
   }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   IRConverter,
+  IRCodeError,
   CompressionLevel,
   isSmartIRData,
   countSmartIRCommands,
@@ -108,14 +109,17 @@ describe('IRConverter.processSmartIRData', () => {
   it('prototype pollution через __proto__ не подменяет [[Prototype]]', () => {
     // Payload с ключом "__proto__" на верхнем уровне commands: без защиты
     // processed["__proto__"] = innerObject через нативный setter меняет
-    // [[Prototype]] аккумулятора → getters с prototype-цепочки начинают
-    // возвращать "evil" данные. С Object.create(null) __proto__ становится
-    // обычным own-property, и .evil остаётся undefined.
-    const payload = JSON.parse('{"commands":{"__proto__":{"evil":true}}}');
+    // [[Prototype]] аккумулятора → доступ через prototype-цепочку возвращает
+    // "внешние" данные. С Object.create(null) __proto__ становится обычным
+    // own-property, и посторонний ключ остаётся невидимым.
+    const payload = JSON.parse(
+      `{"commands":{"__proto__":{"pwned":${JSON.stringify(validCode)}}}}`
+    );
     const result = converter.processSmartIRData(payload);
-    expect((result.commands as Record<string, unknown>).evil).toBeUndefined();
-    // Object.prototype глобально не загрязнён:
-    expect(({} as Record<string, unknown>).evil).toBeUndefined();
+    // pwned не доступен как свойство результата через prototype-цепочку:
+    expect((result.commands as Record<string, unknown>).pwned).toBeUndefined();
+    // И Object.prototype глобально не загрязнён:
+    expect(({} as Record<string, unknown>).pwned).toBeUndefined();
   });
 
   it('commands=null не бросает TypeError (валидатор отсеивает раньше)', () => {
@@ -123,5 +127,19 @@ describe('IRConverter.processSmartIRData', () => {
     // commands безопасно — возвращает пустой словарь команд.
     const result = converter.processSmartIRData({ commands: undefined });
     expect(result.commands).toEqual({});
+  });
+
+  it.each([
+    ['число как лист', { commands: { heat: { '17': 42 } } }, /number/],
+    ['boolean как лист', { commands: { power: true as unknown } }, /boolean/],
+    ['null как лист', { commands: { off: null } }, /null/],
+    ['массив в команде', { commands: { turn_on: ['some-code'] } }, /array/],
+  ])('бросает IRCodeError на %s вместо тихого passthrough', (_desc, input, expected) => {
+    expect(() =>
+      converter.processSmartIRData(input as SmartIRData)
+    ).toThrow(IRCodeError);
+    expect(() =>
+      converter.processSmartIRData(input as SmartIRData)
+    ).toThrow(expected as RegExp);
   });
 });

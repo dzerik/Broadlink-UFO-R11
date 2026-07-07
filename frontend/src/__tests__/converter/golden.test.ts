@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { IRConverter, CompressionLevel } from '../../lib/converter';
+import { BroadlinkDecoder } from '../../lib/converter/broadlink-decoder';
 import goldenData from '../fixtures/golden-data.json';
 
 describe('Golden tests — output must match Python converter', () => {
   const testInput = goldenData.test_input;
 
   it('should decode correct number of timings', () => {
-    const converter = new IRConverter(CompressionLevel.BALANCED);
-    // Access decoder indirectly through a known output
-    // The decoded_timings_count is 200 and first10 are known
-    expect(goldenData.decoded_timings_count).toBe(200);
-    expect(goldenData.decoded_timings_first10).toEqual([
-      4447, 4386, 579, 1584, 579, 518, 549, 1584, 579, 1584,
-    ]);
+    // Реально вызываем decoder на testInput и сравниваем с фикстурой —
+    // раньше тест сверял константы фикстуры сами с собой и пропустил бы
+    // любую регрессию в parseTimings.
+    const decoder = new BroadlinkDecoder();
+    const timings = decoder.decode(testInput);
+    expect(timings).toHaveLength(goldenData.decoded_timings_count);
+    expect(timings.slice(0, 10)).toEqual(goldenData.decoded_timings_first10);
   });
 
   it('should match Python output at compression level NONE (0)', () => {

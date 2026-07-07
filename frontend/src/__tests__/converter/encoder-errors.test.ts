@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { IRConverter, IRCodeError } from '../../lib/converter';
+import { TuyaEncoder } from '../../lib/converter/tuya-encoder';
 
 /**
  * Строит валидный Broadlink Base64 из массива таймингов (в единицах ~unit).
@@ -42,5 +43,23 @@ describe('TuyaEncoder — фильтрация и граничные случа�
     const result = converter.convert(input);
     expect(typeof result).toBe('string');
     expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('тайминг ровно 65535 (max uint16) НЕ отсеивается', () => {
+    // Тестирую границу напрямую в encoder'е: [500, 65535, 500] должен
+    // упаковать все три сэмпла, а не два.
+    const encoder = new TuyaEncoder();
+    const result = encoder.encode([500, 65535, 500]);
+    expect(result.length).toBeGreaterThan(0);
+    // Обратный маркер: если бы 65535 отбрасывался, вход [500, 500] дал
+    // бы КОРОЧЕ результат. Сравним.
+    const shorter = encoder.encode([500, 500]);
+    expect(result.length).toBeGreaterThan(shorter.length);
+  });
+
+  it('тайминги > 65535 отсеиваются', () => {
+    const encoder = new TuyaEncoder();
+    expect(() => encoder.encode([70000, 80000])).toThrow(IRCodeError);
+    expect(() => encoder.encode([70000, 80000])).toThrow(/All timings filtered/);
   });
 });

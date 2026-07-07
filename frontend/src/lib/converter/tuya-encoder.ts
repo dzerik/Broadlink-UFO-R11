@@ -15,7 +15,9 @@ export class TuyaEncoder {
       throw new IRCodeError('Empty timings list');
     }
 
-    const filtered = timings.filter(t => t < MAX_SIGNAL_VALUE);
+    // <= вместо <: MAX_SIGNAL_VALUE (0xFFFF) — сам максимум uint16 LE,
+    // а не эксклюзивная верхняя граница; setUint16 принимает и 65535.
+    const filtered = timings.filter(t => t <= MAX_SIGNAL_VALUE);
     if (!filtered.length) {
       throw new IRCodeError('All timings filtered out');
     }
