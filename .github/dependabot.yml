@@ -15,6 +15,15 @@ updates:
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
 
+      # TypeScript 7 (нативный порт) не поддерживается typescript-eslint:
+      # даже canary (8.66.1-alpha.4) объявляет peer typescript ">=4.8.4 <6.1.0"
+      # и падает на старте линтинга с "typescript-eslint does not support TS 7.0".
+      # eslint-config-next тянет typescript-eslint транзитивно, поэтому обойти
+      # это на стороне проекта нельзя. Разблокировать после закрытия
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
